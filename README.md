@@ -71,6 +71,7 @@
 - [ProcessPriority](Android/System/ProcessPriority.md)
 - [AsyncTask](Android/System/AsyncTask.md)
 - [JobScheduler](Android/System/JobScheduler.md)
+- [Doze](Android/System/Doze.md)
 
 ####Tools
 - [BatteryHistory](Android/Tools/BatteryHistory.md)
