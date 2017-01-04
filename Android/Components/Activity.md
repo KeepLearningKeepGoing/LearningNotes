@@ -1,4 +1,4 @@
-## 基础知识
+hao ## 基础知识
 
 ### 1生命周期
 
@@ -118,7 +118,7 @@ Activity的生命周期图如下：
 
 1. 调用情况：是否调用这个方法，取决于该activity切换到后台时，是否有可能被**意外**杀死。情况分为:
 	1. home到桌面，这种情况下，app进入后台，有可能因为前台进程需要内存而被杀死
-	2. 打开其他Activity(当前应用的/其他应用的)，这种情况下，也可能因为前台app需要内存而被杀死
+	2. 打开其他Activity(当前应用的/其他应用的,无论是否透明)，这种情况下，也可能因为前台app需要内存而被杀死
 	3. 按下多任务按钮，这种情况下，有可能选择其他app，从而被杀死
 		1. 点击多任务，随后，依然选择当前应用，生命周期如下：
 			1. onPause
@@ -137,7 +137,7 @@ Activity的生命周期图如下：
 
 **onRestoreInstanceState**
 
-该方法用于恢复数据，一般来说，可以直接用 onCreate(Bundle)中的数据来恢复，但是在onCreate中使用需要注意判空，因为初次初始化Acitivyt时，数据是null。在onRestoreInstanceState中不用判空，因为只有需要恢复时，该方法才会被调用。
+该方法用于恢复数据，调用前提是，该activity确实被系统销毁了。如果仅仅是home出去，没有被销毁，随后点击进入，那么该方法不会被调用。一般来说，可以直接用 onCreate(Bundle)中的数据来恢复，但是在onCreate中使用需要注意判空，因为初次初始化Acitivyt时，数据是null。在onRestoreInstanceState中不用判空，因为只有需要恢复时，该方法才会被调用。
 
 1. 该方法的超类实现，默认实现了恢复view的信息，所以类似EditText之类的用户编辑信息，不需要我们去保存。
 2. 超类实现保存的view信息，类似 EditText的编辑信息，是在onRestoreInstanceState中进行恢复的，不是在onCreate中，也就是说如果在onRestoreInstanceState中不调用超类实现，那么默认的view保存信息，将无法恢复
@@ -146,10 +146,150 @@ Activity的生命周期图如下：
 
 ### 3 IntentFilter
 
+intent启动activity主要分为两种：Implicit(隐式)，以及 Explicit（显式）。
+
+intentFilter主要用于activity的隐式启动，基本形式如下：
+
+
+	<activity
+	    android:name="com.tencent.tauth.AuthActivity"
+	    android:launchMode="singleTask"
+	    android:noHistory="true"
+	    android:taskAffinity="com.coohuaclient">
+	    <intent-filter>
+	        <action android:name="android.intent.action.VIEW"/>
+	
+	        <category android:name="android.intent.category.DEFAULT"/>
+	        <category android:name="android.intent.category.BROWSABLE"/>
+	
+	        <data android:scheme="tencent1101354300"/>
+	    </intent-filter>
+	</activity>
+
+可以看到其中有action，category，data三要素。
+
+1. action
+
+	action 在隐式启动中是必须的，要想隐式启动成功，则在清单文件的intentFilter中，必须配置>=1以上的action，而隐式的intent中，只能指定一个action，且要匹配上。
+
+	一个intent，如果只有action，没有category和data，那么只要action符合匹配条件，即可启动对应activity。
+	相反，如果没有action，那么无论如何也不能启动成功。所以action是必须的。
+
+2. category
+
+	隐式启动中，category并不是必须的。没有手动指定category，只要action是匹配的，依然可以启动成功。
+
+	在intent中，**category不可以脱离action单独存在**，如果一个intent没有action，只有category，即使category符合匹配规则，也无法启动activity。
+
+	在隐式启动的intent中，系统都会默认加上Android.intent.category.DEFAULT这种category，因此，**在xml中也必须指定这种值**,这是成功调用的前提条件。
+
+	intent中无论是否手动添加，都会有Android.intent.category.DEFAULT这个category，它和其他手动添加的category一起组合成匹配组，只要该匹配组是某个activity的xml中配置的匹配组的子集，即可匹配成功。
+
+	
+3. data
+
+	data在隐式启动中并不是必须的，即使是xml配置了data，但是在intent中没有data，只要符合前面所说的条件，依然可以启动成功，但是如果在intent中设置了data，那么就必须匹配上，才能启动
+
+	完整形式如下：
+
+		<data
+	      android:mimeType="image/*" 
+	      android:scheme="string"
+	      android:host="string"
+	      android:port="string"
+	      android:path="string"
+	      android:pathPattern="string"
+	      android:pathPrefix="string"
+	      />
+
+	可以看到，data由两部分组成，
+
+	1. 一部分是mimeType代表了数据/资源的媒体类型，定义文件的类型，比如 image/jpeg，也可以使用 image/* 来表示所有图片格式的文件。也可以使用 / 来表示所有文件
+	2. 其他的是URI，指定了资源的位置。
+	
+	看看URI的结构：
+
+		<scheme>://<host>:<port>/[<path>|<pathPrefix>|<pathPattern>]
+
+	例如： 
+
+		content://com.baidu.haha:8080/dir/src/text.txt 
+		http://www.baidu.com:80/dir/src/text.txt
+
+	上面的两种例子说明了URI的格式。
+	
+	这里值得说明的是path，pathPrefix以及pathPattern的区别，path指的是完整的路径，例如上诉例子中path代表“/dir/src/text.txt”，而pathPrefix代表了完整路径的起始部分，可以是/dir也可以是/dir/src，pathPattern则是符合正则表达式的路径，可以用正则表达式来表示路径，从而实现匹配。值得注意的是，pathPattern使用中，如果要表达例如*这类在正则表达式中有作用的字符，那么需要进行转义，但是写成“\*”是不行的，因为清单文件是一个xml文件，他在被系统读取到内存的时候，会被转义一次，当pathPattern被当作正则表达式的读取的时候又会转义一次，所以这里有两次转义。所以，应该写成“`\\*`”,而“`\`”则要写成"`\\\\`"
+
+	
+
+	**data匹配比较严格，如果在intent不指定data，则按照action和category的规则进行匹配。如果intent要指定data，且在xml中指定了type和uri，那么inten中也必须都指定type和uri，如果在xml只指定了其中一项，那么在intent中也只能指定对应的一项。**
+
+	值得注意的是，在intent中的setData和setType方法，可以分别指定uri和type，但是，这两个方法会分别将另一个数据置空，所以如果需要uri和type都指定，需要使用 setDataAndType() 方法。
+
+
+----------
+
+总结成功隐式启动的条件如下：(必须遵守如下条列，才能隐式启动成功)
+
+1. intent中，只有action是必须的，category和data可以不要。但在xml中，action和category(Android.intent.category.DEFAULT)都是必须的,因为intent会被系统默认添加category(Android.intent.category.DEFAULT)。
+2. action在intent中**有且只有**一个，在xml可以有多个，并且intent中必须是xml中的子集。
+3. 在intent中，category必须是xml中的子集，且xml中必须含有Android.intent.category.DEFAULT
+4. data匹配严格，在intent中要么别指定，要么就必须和xml中完全匹配，不能多，不能少
+
+----------
+
 
 ### 4 Activity间通信
 
+Activity之间通过intent启动并传递数据这里不做赘述，以后如果有值得注意的点再做补充。
+
+这里说一下startActivityForResult与setResult。我们都知道这里两个方法的用途，一个启动activity B，一个在B中设置结果，返回给前一个Activity。这里的setResult有个值得注意的点：
+
+如果setResult在onBackPressed中调用，那么setResult必须在超类的实现的之前调用，否则设置的结果无法传递到前一个activity中。调用方法类似下方：
+
+    @Override
+    public void onBackPressed() {
+        Intent resultInt = new Intent();
+        resultInt.putExtra("Result", "Done");
+        setResult(Activity.RESULT_OK, resultInt);
+        super.onBackPressed();
+    }
+
+只是因为在超类的实现中，会走到activity的finish方法，而finish代码如下：
+
+    private void finish(int finishTask) {
+        if (mParent == null) {
+            int resultCode;
+            Intent resultData;
+            synchronized (this) {
+                resultCode = mResultCode;
+                resultData = mResultData;
+            }
+            if (false) Log.v(TAG, "Finishing self: token=" + mToken);
+            try {
+                if (resultData != null) {
+                    resultData.prepareToLeaveProcess(this);
+                }
+                if (ActivityManagerNative.getDefault()
+                        .finishActivity(mToken, resultCode, resultData, finishTask)) {
+                    mFinished = true;
+                }
+            } catch (RemoteException e) {
+                // Empty
+            }
+        } else {
+            mParent.finishFromChild(this);
+        }
+    }
+
+这里可以明确看到，resultCode和resultData的值被设定了，随后ActivityManagerNative使用了该值，也就是说，如果在finish后调用setResult，那么设置进去的值将无法被ActivityManagerNative使用，也就无法传递到上一个Activity中。
+
+因此。总结来说，setResult方法，不能在finish之后调用，由于finish在onBackPressed被调用了，所以也不能在onBackPressed之后调用。
+
 ### 5 Activity启动模式
+
+Activity有四种启动模式:
+
 
 
 
