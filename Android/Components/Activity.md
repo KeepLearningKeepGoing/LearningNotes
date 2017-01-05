@@ -290,6 +290,53 @@ Activity之间通过intent启动并传递数据这里不做赘述，以后如果
 
 Activity有四种启动模式:
 
+1. standard
+2. singleTop
+3. singleTask
+4. singleInstance
+
+**standard**
+标准模式，也是默认的模式，每次启动一个activity都会创建一个新的activity的实例。例如B启动了A，那么A就会进入B的栈中。如果用Application来启动一个activity就会报错，因为Application并没有一个activity的栈，此时需要加入FLAG_ACTIVITY_NEW_TASK标志位，来新开启一个栈，此时的activity实际上是以singleTask启动的。
+
+**singleTop**
+栈顶复用模式，如果B启动A，A就在栈顶，那么A将不会被创建一个新的实例，而是直接调用onNewIntent，然后调用onResume。如果不再栈顶，那么依然会重新创建一个实例。
+
+**singleTask**
+栈内复用，意思是，一个栈内，只会有一个实例。同样的，系统会调用onNewIntent方法。调用这个Activity的时候，会判断是否有其需要的栈（根据TaskAffinity属性）：
+
+1. 如果没有，那么创建栈并创建实例压入栈中
+2. 如果有栈,没有activity实例，那么创建实例压入栈中
+3. 如果有栈有实例，那么将整个栈调到前台，实例调到栈顶，并清除掉栈中位于实例上面的activity。
+
+
+**singleInstance**
+
+单例模式，activity只有一个实例，并且单独在一个task中，且这个task只有它一个activity。
+
+
+如何判断activity需要的任务栈呢，根据TaskAffinity属性，默认情况下，这个属性和包名相同，但是也可以人为指定。一般来说TaskAffinity会和singleTask或者allowTaskReparenting配合使用。除了singleTask以外，在standard以及singleTop中并不会新开task，而在singleInstance中一定会新开一个单独的task，所以设置TaskAffinity与否都没有意义。
+
+allowTaskReparenting标识：是否允许activity调整到它原本就想要的task中。例如A应用打开了B应用中的页面c，而c页面的启动模式为standard或者singleTop（另外两种模式，不会进入A栈，所以该属性无用），那么c就进入了A的栈中，当我们从点击home，A应用的Task不再显示的时候，如果allowTaskReparenting为true，B应用的页面c就会试图回到原有的Task中，也就是B的Task，此时B的Task将会被创建，那么c将会被移动到B中来。
+
+
+### 6 Activity启动Flag
+
+activity的flag可以在intent中设置，这里介绍几个常用的。
+
+**FLAG_ACTIVITY_NEW_TASK**
+指定singleTask模式启动
+
+**FLAG_ACTIVITY_SINGLE_TOP**
+指定singleTop启动
+
+**FLAG_ACTIVITY_CLEAR_TOP**
+一般和singleTask一起出现，此时位于被启动的activity栈上面的将activity被清除。如果是standard模式下使用这个标志，那么该栈中的这个activity以及他上面的都会被清除，然后重新创建一个实例。
+
+**FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS**
+设置了这个标志的activity不会出现在历史activity列表中。
+
+
+
 
 
 
