@@ -1,4 +1,4 @@
-hao ## 基础知识
+## 基础知识
 
 ### 1生命周期
 
@@ -299,7 +299,7 @@ Activity有四种启动模式:
 标准模式，也是默认的模式，每次启动一个activity都会创建一个新的activity的实例。例如B启动了A，那么A就会进入B的栈中。如果用Application来启动一个activity就会报错，因为Application并没有一个activity的栈，此时需要加入FLAG_ACTIVITY_NEW_TASK标志位，来新开启一个栈，此时的activity实际上是以singleTask启动的。
 
 **singleTop**
-栈顶复用模式，如果B启动A，A就在栈顶，那么A将不会被创建一个新的实例，而是直接调用onNewIntent，然后调用onResume。如果不再栈顶，那么依然会重新创建一个实例。
+栈顶复用模式，如果B启动A，A就在栈顶，那么A将不会被创建一个新的实例，而是直接调用onNewIntent，然后调用onRestart,onStart,onResume。如果不在栈顶，那么依然会重新创建一个实例。
 
 **singleTask**
 栈内复用，意思是，一个栈内，只会有一个实例。同样的，系统会调用onNewIntent方法。调用这个Activity的时候，会判断是否有其需要的栈（根据TaskAffinity属性）：
