@@ -37,22 +37,22 @@
 
 # Android
 
-####Components
+#### Components
 
 - [Activity](Android/Components/Activity.md)
 - [Service](Android/Components/Service.md)
 - [Broadcast Receiver](Android/Components/BroadcastReceiver.md)
 - [ContentProvider](Android/Components/ContentProvider.md)
 
-####View
+#### View
 
 - [EventSystem](Android/View/EventSystem.md)
 - [DrawingProcess](Android/View/DrawingProcess.md)
-- [Fragment](Android/View/Fragment.md)
+- [Fragment](Android/Components/Fragment.md)
 - [Layout](Android/View/Layout.md)
 - [ViewPager](Android/View/ViewPager.md)
 
-####UI
+#### UI
 
 - [Supporting Different Screens](Android/UI/SupportingDifferentScreens.md)
 - [Layout Optimization](Android/UI/LayoutOptimization.md)
