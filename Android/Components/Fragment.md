@@ -186,4 +186,27 @@ Remove会受到影响，由于replace是remove和add和结合体，所以也会�
 
 也就是说没有执行onAttach和onCreate，和上面图示的一致，也就是说如果被加入了回退栈，有恢复的可能，那么就不会完全销毁掉fragment，而是销毁他的view。
 
+加入回退栈的方法前面说了，加入之后，点击返回键就可以将transaction从栈中弹出，从而达到回退操作的目的。也可以主动调用回退方法：
+
+	/*
+	*id: 当提交变更时transaction.commit()的返回值。
+	*name: transaction.addToBackStack(String tag)中的tag值；
+	*flags：有两个取值：0或FragmentManager.POP_BACK_STACK_INCLUSIVE；
+	当取值0时，表示除了参数一指定这一层之上的所有层都退出栈，指定的这一层为栈顶层； 当取值POP_BACK_STACK_INCLUSIVE时，表示连着参数一指定的这一层一起退出栈
+	*/
+	abstract void   popBackStack();
+	
+	abstract void   popBackStack(String name, int flags)
+	
+	abstract void   popBackStack(int id, int flags)
+
+上诉方法是异步的，只是将返回事件插入到了事件loop中，需要立即返回可以调用如下方法：
+	
+	popBackStackImmediate()  
+	popBackStackImmediate(String tag)  
+	popBackStackImmediate(String tag, int flag)  
+	popBackStackImmediate(int id, int flag)  
+
+
+
 
