@@ -297,9 +297,6 @@ scheduleTraversals方法会向主线程发送一个“遍历”消息，最终�
 ![activity_lifecycle](Images/Draw/drawThreeSteps.png)
 
 ![activity_lifecycle](Images/Draw/view_draw_method_chain.png)
-值得注意的是：用户主动调用 request，只会触发 measure 和 layout 过程，而不会执行 draw 过程
-
-
 
 
 #### 1 measure 
@@ -1095,6 +1092,338 @@ View 的onDraw（Canvas）默认是空实现，自定义绘制过程需要复写
 
 到这里，整个view的绘制过程全部完毕了。
 
+#### 4 requestLayout
 
+我们有时会主动调用requestLayout来显现已经改变的布局，那么requestLayout调用后会发生什么呢。看一下view的requestLayout方法：
 
+	@CallSuper
+	public void requestLayout() {
+	    if (mMeasureCache != null) mMeasureCache.clear();
+	
+	    if (mAttachInfo != null && mAttachInfo.mViewRequestingLayout == null) {
+	        // Only trigger request-during-layout logic if this is the view requesting it,
+	        // not the views in its parent hierarchy
+	        ViewRootImpl viewRoot = getViewRootImpl();
+	        if (viewRoot != null && viewRoot.isInLayout()) {
+	            if (!viewRoot.requestLayoutDuringLayout(this)) {
+	                return;
+	            }
+	        }
+	        mAttachInfo.mViewRequestingLayout = this;
+	    }
+	
+	    //为当前view设置标记位 PFLAG_FORCE_LAYOUT
+	    mPrivateFlags |= PFLAG_FORCE_LAYOUT;
+	    mPrivateFlags |= PFLAG_INVALIDATED;
+	
+	    if (mParent != null && !mParent.isLayoutRequested()) {
+	        //向父容器请求布局
+	        mParent.requestLayout();
+	    }
+	    if (mAttachInfo != null && mAttachInfo.mViewRequestingLayout == this) {
+	        mAttachInfo.mViewRequestingLayout = null;
+	    }
+	}
+
+可以看到，这里会调用父容器的requestLayout方法，层层上报，最后，会到ViewRootImpl的requestLayout方法，如此一来，就又到了前面讲解的三大流程的触发。
+
+所以，requestLayout会触发绘制的3大流程。
+
+#### 5 invalidate
+
+调用了invalidate后，会引发view的重绘。
+
+	public void invalidate() {
+	    invalidate(true);
+	}
+	void invalidate(boolean invalidateCache) {
+	    invalidateInternal(0, 0, mRight - mLeft, mBottom - mTop, invalidateCache, true);
+	}
+	void invalidateInternal(int l, int t, int r, int b, boolean invalidateCache,
+	        boolean fullInvalidate) {
+	    if (mGhostView != null) {
+	        mGhostView.invalidate(true);
+	        return;
+	    }
+	
+	    //这里判断该子View是否可见或者是否处于动画中
+	    if (skipInvalidate()) {
+	        return;
+	    }
+	
+	    //根据View的标记位来判断该子View是否需要重绘，假如View没有任何变化，那么就不需要重绘
+	    if ((mPrivateFlags & (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)) == (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)
+	            || (invalidateCache && (mPrivateFlags & PFLAG_DRAWING_CACHE_VALID) == PFLAG_DRAWING_CACHE_VALID)
+	            || (mPrivateFlags & PFLAG_INVALIDATED) != PFLAG_INVALIDATED
+	            || (fullInvalidate && isOpaque() != mLastIsOpaque)) {
+	        if (fullInvalidate) {
+	            mLastIsOpaque = isOpaque();
+	            mPrivateFlags &= ~PFLAG_DRAWN;
+	        }
+	
+	        //设置PFLAG_DIRTY标记位
+	        mPrivateFlags |= PFLAG_DIRTY;
+	
+	        if (invalidateCache) {
+	            mPrivateFlags |= PFLAG_INVALIDATED;
+	            mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
+	        }
+	
+	        // Propagate the damage rectangle to the parent view.
+	        //把需要重绘的区域传递给父容器
+	        final AttachInfo ai = mAttachInfo;
+	        final ViewParent p = mParent;
+	        if (p != null && ai != null && l < r && t < b) {
+	            final Rect damage = ai.mTmpInvalRect;
+	            damage.set(l, t, r, b);
+	            //调用父容器的方法，向上传递事件
+	            p.invalidateChild(this, damage);
+	        }
+	        ...
+	    }
+	}
+
+调用invalidate后，会调用invalidateInternal方法，在该方法中调用父容器的invalidateChild方法将需要重绘的rect传递给父容器；
+
+	public final void invalidateChild(View child, final Rect dirty) {
+	
+	    //设置 parent 等于自身
+	    ViewParent parent = this;
+	
+	    final AttachInfo attachInfo = mAttachInfo;
+	    if (attachInfo != null) {
+	        // If the child is drawing an animation, we want to copy this flag onto
+	        // ourselves and the parent to make sure the invalidate request goes
+	        // through
+	        final boolean drawAnimation = (child.mPrivateFlags & PFLAG_DRAW_ANIMATION)
+	                == PFLAG_DRAW_ANIMATION;
+	
+	        // Check whether the child that requests the invalidate is fully opaque
+	        // Views being animated or transformed are not considered opaque because we may
+	        // be invalidating their old position and need the parent to paint behind them.
+	        Matrix childMatrix = child.getMatrix();
+	        final boolean isOpaque = child.isOpaque() && !drawAnimation &&
+	                child.getAnimation() == null && childMatrix.isIdentity();
+	        // Mark the child as dirty, using the appropriate flag
+	        // Make sure we do not set both flags at the same time
+	        int opaqueFlag = isOpaque ? PFLAG_DIRTY_OPAQUE : PFLAG_DIRTY;
+	
+	        if (child.mLayerType != LAYER_TYPE_NONE) {
+	            mPrivateFlags |= PFLAG_INVALIDATED;
+	            mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
+	        }
+	
+	        //储存子View的mLeft和mTop值
+	        final int[] location = attachInfo.mInvalidateChildLocation;
+	        location[CHILD_LEFT_INDEX] = child.mLeft;
+	        location[CHILD_TOP_INDEX] = child.mTop;
+	
+	        ...
+	
+	        do {
+	            View view = null;
+	            if (parent instanceof View) {
+	                view = (View) parent;
+	            }
+	
+	            if (drawAnimation) {
+	                if (view != null) {
+	                    view.mPrivateFlags |= PFLAG_DRAW_ANIMATION;
+	                } else if (parent instanceof ViewRootImpl) {
+	                    ((ViewRootImpl) parent).mIsAnimating = true;
+	                }
+	            }
+	
+	            // If the parent is dirty opaque or not dirty, mark it dirty with the opaque
+	            // flag coming from the child that initiated the invalidate
+	            if (view != null) {
+	                if ((view.mViewFlags & FADING_EDGE_MASK) != 0 &&
+	                        view.getSolidColor() == 0) {
+	                    opaqueFlag = PFLAG_DIRTY;
+	                }
+	                if ((view.mPrivateFlags & PFLAG_DIRTY_MASK) != PFLAG_DIRTY) {
+	                    //对当前View的标记位进行设置
+	                    view.mPrivateFlags = (view.mPrivateFlags & ~PFLAG_DIRTY_MASK) | opaqueFlag;
+	                }
+	            }
+	
+	            //调用ViewGrup的invalidateChildInParent，如果已经达到最顶层view,则调用ViewRootImpl
+	            //的invalidateChildInParent。
+	            parent = parent.invalidateChildInParent(location, dirty);
+	
+	            if (view != null) {
+	                // Account for transform on current parent
+	                Matrix m = view.getMatrix();
+	                if (!m.isIdentity()) {
+	                    RectF boundingRect = attachInfo.mTmpTransformRect;
+	                    boundingRect.set(dirty);
+	                    m.mapRect(boundingRect);
+	                    dirty.set((int) (boundingRect.left - 0.5f),
+	                            (int) (boundingRect.top - 0.5f),
+	                            (int) (boundingRect.right + 0.5f),
+	                            (int) (boundingRect.bottom + 0.5f));
+	                }
+	            }
+	        } while (parent != null);
+	    }
+	}
+
+随后在invalidateChild方法中，循环向上调用父控件的invalidateChildInParent方法，并传递需要重绘的区域，看下invalidateChildInParent方法：
+
+	public ViewParent invalidateChildInParent(final int[] location, final Rect dirty) {
+	    if ((mPrivateFlags & PFLAG_DRAWN) == PFLAG_DRAWN ||
+	            (mPrivateFlags & PFLAG_DRAWING_CACHE_VALID) == PFLAG_DRAWING_CACHE_VALID) {
+	        if ((mGroupFlags & (FLAG_OPTIMIZE_INVALIDATE | FLAG_ANIMATION_DONE)) !=
+	                    FLAG_OPTIMIZE_INVALIDATE) {
+	
+	            //将dirty中的坐标转化为父容器中的坐标，考虑mScrollX和mScrollY的影响
+	            dirty.offset(location[CHILD_LEFT_INDEX] - mScrollX,
+	                    location[CHILD_TOP_INDEX] - mScrollY);
+	
+	            if ((mGroupFlags & FLAG_CLIP_CHILDREN) == 0) {
+	                //求并集，结果是把子视图的dirty区域转化为父容器的dirty区域
+	                dirty.union(0, 0, mRight - mLeft, mBottom - mTop);
+	            }
+	
+	            final int left = mLeft;
+	            final int top = mTop;
+	
+	            if ((mGroupFlags & FLAG_CLIP_CHILDREN) == FLAG_CLIP_CHILDREN) {
+	                if (!dirty.intersect(0, 0, mRight - left, mBottom - top)) {
+	                    dirty.setEmpty();
+	                }
+	            }
+	            mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
+	
+	            //记录当前视图的mLeft和mTop值，在下一次循环中会把当前值再向父容器的坐标转化
+	            location[CHILD_LEFT_INDEX] = left;
+	            location[CHILD_TOP_INDEX] = top;
+	
+	            if (mLayerType != LAYER_TYPE_NONE) {
+	                mPrivateFlags |= PFLAG_INVALIDATED;
+	            }
+	            //返回当前视图的父容器
+	            return mParent;
+	
+	        }
+	        ...
+	    }
+	    return null;
+	}
+
+每次把dirty区域向上传递时，都要和当前的View区域做处理，例如子dirty区域大于了父容器，那么就需要取交集，并且排除滚动的影响，将子view的重绘区域转换为父控件的dirty区域。上面的回溯到达最上层时，返回的parent将是ViewRootImpl，所以最后的invalidateChildInParent
+的调用，是调用的ViewRooImpl方法中的方法：
+
+	@Override
+	public ViewParent invalidateChildInParent(int[] location, Rect dirty) {
+	    checkThread();
+	    if (DEBUG_DRAW) Log.v(TAG, "Invalidate child: " + dirty);
+	
+	    if (dirty == null) {
+	        invalidate();
+	        return null;
+	    } else if (dirty.isEmpty() && !mIsAnimating) {
+	        return null;
+	    }
+	
+	    if (mCurScrollY != 0 || mTranslator != null) {
+	        mTempRect.set(dirty);
+	        dirty = mTempRect;
+	        if (mCurScrollY != 0) {
+	            dirty.offset(0, -mCurScrollY);
+	        }
+	        if (mTranslator != null) {
+	            mTranslator.translateRectInAppWindowToScreen(dirty);
+	        }
+	        if (mAttachInfo.mScalingRequired) {
+	            dirty.inset(-1, -1);
+	        }
+	    }
+	
+	    final Rect localDirty = mDirty;
+	    if (!localDirty.isEmpty() && !localDirty.contains(dirty)) {
+	        mAttachInfo.mSetIgnoreDirtyState = true;
+	        mAttachInfo.mIgnoreDirtyState = true;
+	    }
+	
+	    // Add the new dirty rect to the current one
+	    localDirty.union(dirty.left, dirty.top, dirty.right, dirty.bottom);
+	    // Intersect with the bounds of the window to skip
+	    // updates that lie outside of the visible region
+	    final float appScale = mAttachInfo.mApplicationScale;
+	    final boolean intersected = localDirty.intersect(0, 0,
+	            (int) (mWidth * appScale + 0.5f), (int) (mHeight * appScale + 0.5f));
+	    if (!intersected) {
+	        localDirty.setEmpty();
+	    }
+	    if (!mWillDrawSoon && (intersected || mIsAnimating)) {
+	        scheduleTraversals();
+	    }
+	    return null;
+	}
+
+可以看出，该方法所做的工作与上面的差不多，都进行了offset和union对坐标的调整，然后把dirty区域的信息保存在mDirty中，最后调用了scheduleTraversals方法，触发View的工作流程，由于没有添加measure和layout的标记位，因此measure、layout流程不会执行，而是直接从draw流程开始。
+
+好了，现在总结一下invalidate方法，当子View调用了invalidate方法后，会为该View添加一个标记位，同时不断向父容器请求刷新，父容器通过计算得出自身需要重绘的区域，直到传递到ViewRootImpl中，最终触发performTraversals方法，进行开始View树重绘流程(只绘制需要重绘的视图)。
+
+注意：这里是怎么做到只绘制需要绘制的dirty区域呢，因为最开始调用validate的view的dirty区域一直向上传递，并且和父控件的区域处理后生成了新的dirty区域再次向上传递，最后到达viewrootImpl后，就得到了需要重绘的区域，在ViewRootImpl中，通过performDraw，走到 draw，再到drawSoftware，在drawSoftware中调用了decorview的draw（canvas）方法来开启绘制，这个关键点就在于，这里的传递的canvas参数，在drawSoftware方法中，这个canvas的来源是这句代码：
+
+	canvas = mSurface.lockCanvas(dirty);
+
+这里的dirty实际上就是申请invalidate的view逐层传递上来的，所以这里的canvas实际上，只有这块dirty区域，并非整个屏幕。
+
+#### 6 postInvalidate
+
+这个方法与invalidate方法的作用是一样的，都是使View树重绘，但两者的使用条件不同，postInvalidate是在非UI线程中调用，invalidate则是在UI线程中调用。 
+
+接下来我们分析postInvalidate方法的原理。 
+
+首先看View#postInvalidate：
+
+	public void postInvalidate() {
+	    postInvalidateDelayed(0);
+	}
+	
+	public void postInvalidateDelayed(long delayMilliseconds) {
+	    // We try only with the AttachInfo because there's no point in invalidating
+	    // if we are not attached to our window
+	    final AttachInfo attachInfo = mAttachInfo;
+	    if (attachInfo != null) {
+	        attachInfo.mViewRootImpl.dispatchInvalidateDelayed(this, delayMilliseconds);
+	    }
+	}
+
+由以上代码可以看出，只有attachInfo不为null的时候才会继续执行，即只有确保视图被添加到窗口的时候才会通知view树重绘，因为这是一个异步方法，如果在视图还未被添加到窗口就通知重绘的话会出现错误，所以这样要做一下判断。接着调用了
+
+ViewRootImpl#dispatchInvalidateDelayed方法：
+
+	public void dispatchInvalidateDelayed(View view, long delayMilliseconds) {
+	    Message msg = mHandler.obtainMessage(MSG_INVALIDATE, view);
+	    mHandler.sendMessageDelayed(msg, delayMilliseconds);
+	}
+
+这里用了Handler，发送了一个异步消息到主线程，显然这里发送的是MSG_INVALIDATE，即通知主线程刷新视图，具体的实现逻辑我们可以看看该mHandler的实现：
+
+	final ViewRootHandler mHandler = new ViewRootHandler();
+	
+	final class ViewRootHandler extends Handler {
+	        @Override
+	        public String getMessageName(Message message) {
+	            ....
+	        }
+	
+	        @Override
+	        public void handleMessage(Message msg) {
+	            switch (msg.what) {
+	            case MSG_INVALIDATE:
+	                ((View) msg.obj).invalidate();
+	                break;
+	            ...
+	        }
+	    }
+	}	
+
+可以看出，参数message传递过来的正是View视图的实例，然后直接调用了invalidate方法，然后继续invalidate流程。
+
+到这里整个view的绘制流程，和常用方法就讲解完成了
 
